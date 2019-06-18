@@ -7,6 +7,12 @@ import torch.optim as optim
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+'''
+Solve the entropic-regularised problem:
+    min <C, pi> - eps * H(pi) + lambda * functional(pi*vector_1)
+    s.t. pi >= 0 and pi.T * vector_1 = b
+'''
+
 ################################################
 ######### Support functions ##################
 ################################################
@@ -81,6 +87,11 @@ def sinkhorn(x, y, b, functional, lamb, eps, n_iter):
 ##################################
 ####### Use pure torch ###########
 ##################################
+
+'''
+Transform the original bounded/constrained proximal problem into unbounded 
+by minimizing log_p instead of p.
+'''
 
 class Proximal_torch():
     def __init__(self, log_q, norm_q, functional, lamb):

@@ -11,6 +11,8 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 Solve the entropic-regularised problem:
     min <C, pi> - eps * H(pi) + lambda * functional(pi*vector_1)
     s.t. pi >= 0 and pi.T * vector_1 = b
+ - functional must be convex.
+ - b: a probability distribution
 '''
 
 ################################################
@@ -33,6 +35,10 @@ def lse(A, dim = 1):
 ##################################
 ####### Use scipy.optimize #######
 ##################################
+
+'''
+When GPU is not available, it is preferable to use scipy optimize
+'''
 
 class Proximal():
     def __init__(self, q, norm_q, functional, lamb):
@@ -155,6 +161,9 @@ def sinkhorn_torch(x, y, b, functional, lamb, eps, n_iter):
     return (objective, pi)
 
 ##############################
+'''
+For testing purpose only
+'''
 
 def sinkhorn_test(x, y, b, a, eps, n_iter):
     C_eps = cost_matrix(x,y)/eps

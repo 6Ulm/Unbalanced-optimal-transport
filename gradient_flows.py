@@ -49,16 +49,11 @@ class Proximal():
     def KL(self, p):
         KL_div = np.dot(p, np.log(p)) - np.dot(p, np.log(self.q)) - np.sum(p) + np.sum(self.q)
         return KL_div
-
-    def lagrangien(self, p):
-        return self.KL(p) + self.functional(p*self.norm_q) / self.norm_q
     
     def solver(self):
-        obj = self.lagrangien
+        obj = lambda p: self.KL(p) + self.functional(p*self.norm_q) / self.norm_q
         bounds = Bounds([0]*len(self.q), [np.inf]*len(self.q))
-        dobj = grad(obj)
-        res = minimize(obj, x0=self.q, method='TNC', jac=dobj, bounds=bounds)
-
+        res = minimize(obj, x0=self.q, method='TNC', jac=grad(obj), bounds=bounds)
         return torch.from_numpy(res.x).float().to(device).view(-1,1)
 
 def normalise(log_vec):
@@ -108,18 +103,13 @@ class Proximal_torch():
         p = log_p.exp()
         KL_div = p.dot(log_p) - p.dot(self.log_q) - p.sum() + self.q_sum
         return KL_div
-
-    def scale_functional(self, log_p):
-        return self.functional(log_p.exp()*self.norm_q) / self.norm_q
-
-    def lagrangien(self, log_p):
-        return self.KL(log_p) + self.scale_functional(log_p)
-    
-    def solver(self, n_epochs = 1000, lr = 1e-1):
+  
+    def solver(self, n_epochs = 100, lr = 1e-1):
+        lagrangien = lambda log_p: self.KL(log_p) + self.functional(log_p.exp()*self.norm_q) / self.norm_q
         log_p = self.log_q.clone().requires_grad_(True)
 
         for _ in range(n_epochs):
-            obj = self.lagrangien(log_p)
+            obj = lagrangien(log_p)
             obj.backward()
             with torch.no_grad():
                 log_p -= lr * log_p.grad
@@ -143,7 +133,7 @@ def sinkhorn_torch(x, y, b, func_f, eps, n_iter):
         log_Kv = lse(-C_eps.t() + log_v.view(1,-1))
         norm_Kv, log_Kv = normalise_torch(log_Kv)
     
-        log_u = Proximal_torch(log_Kv, norm_Kv, func_f).solver(n_epochs = 100, lr = 1e-1) - log_Kv
+        log_u = Proximal_torch(log_Kv, norm_Kv, func_f).solver() - log_Kv
         log_v = log_b - lse(-C_eps + log_u.view(1,-1))
 
         log_u.detach_()

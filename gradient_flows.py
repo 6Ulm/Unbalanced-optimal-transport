@@ -41,19 +41,17 @@ When GPU is not available, it is preferable to use scipy optimize
 '''
 
 class Proximal():
-    def __init__(self, q, norm_q, functional, lamb):
+    def __init__(self, q, norm_q, functional):
         self.q = q        
         self.norm_q = norm_q
         self.functional = functional
-        self.lamb = lamb
     
     def KL(self, p):
         KL_div = np.dot(p, np.log(p)) - np.dot(p, np.log(self.q)) - np.sum(p) + np.sum(self.q)
         return KL_div
 
     def lagrangien(self, p):
-        lagrange = self.KL(p) + self.lamb * self.functional(p*self.norm_q) / self.norm_q
-        return lagrange
+        return self.KL(p) + self.functional(p*self.norm_q) / self.norm_q
     
     def solver(self):
         obj = self.lagrangien
@@ -70,7 +68,7 @@ def normalise(log_vec):
     vec = log_vec.exp().view(-1).numpy()
     return (norm, vec, log_vec)
 
-def sinkhorn(x, y, b, functional, lamb, eps, n_iter):
+def sinkhorn(x, y, b, func_f, eps, n_iter):
     C = cost_matrix(x,y)
     C_eps = C/eps
     log_b = b.log().view(-1,1)
@@ -80,13 +78,13 @@ def sinkhorn(x, y, b, functional, lamb, eps, n_iter):
         log_Kv = lse(-C_eps.t() + log_v.view(1,-1))
         norm_Kv, Kv, log_Kv = normalise(log_Kv)
 
-        log_u = Proximal(Kv, norm_Kv, functional, lamb).solver().log() - log_Kv
+        log_u = Proximal(Kv, norm_Kv, func_f).solver().log() - log_Kv
         log_v = log_b - lse(-C_eps + log_u.view(1,-1))
 
     log_pi = log_u.view(-1).unsqueeze(1) - C_eps + log_v.view(-1).unsqueeze(0)
     pi = log_pi.exp()
     neg_entropy = (pi*log_pi).sum() - pi.sum()
-    objective = (C*pi).sum() - eps * neg_entropy + lamb * functional(pi.sum(1))
+    objective = (C*pi).sum() - eps * neg_entropy + func_f(pi.sum(1))
 
     return (objective, pi)
 
@@ -100,24 +98,22 @@ by minimizing log_p instead of p.
 '''
 
 class Proximal_torch():
-    def __init__(self, log_q, norm_q, functional, lamb):
+    def __init__(self, log_q, norm_q, functional):
         self.log_q = log_q.view(-1)
-        self.q = self.log_q.exp()
+        self.q_sum = self.log_q.exp().sum()
         self.norm_q = norm_q
         self.functional = functional
-        self.lamb = lamb
     
     def KL(self, log_p):
         p = log_p.exp()
-        KL_div = p.dot(log_p) - p.dot(self.log_q) - p.sum() + self.q.sum()
+        KL_div = p.dot(log_p) - p.dot(self.log_q) - p.sum() + self.q_sum
         return KL_div
 
     def scale_functional(self, log_p):
         return self.functional(log_p.exp()*self.norm_q) / self.norm_q
 
     def lagrangien(self, log_p):
-        lagrange = self.KL(log_p) + self.lamb * self.scale_functional(log_p)
-        return lagrange
+        return self.KL(log_p) + self.scale_functional(log_p)
     
     def solver(self, n_epochs = 1000, lr = 1e-1):
         log_p = self.log_q.clone().requires_grad_(True)
@@ -137,7 +133,7 @@ def normalise_torch(log_vec):
     log_vec -= log_norm
     return (norm_vec, log_vec)
 
-def sinkhorn_torch(x, y, b, functional, lamb, eps, n_iter):
+def sinkhorn_torch(x, y, b, func_f, eps, n_iter):
     C = cost_matrix(x,y)
     C_eps = C/eps
     log_b = b.log().view(-1,1)
@@ -147,7 +143,7 @@ def sinkhorn_torch(x, y, b, functional, lamb, eps, n_iter):
         log_Kv = lse(-C_eps.t() + log_v.view(1,-1))
         norm_Kv, log_Kv = normalise_torch(log_Kv)
     
-        log_u = Proximal_torch(log_Kv, norm_Kv, functional, lamb).solver(n_epochs = 100, lr = 1e-1) - log_Kv
+        log_u = Proximal_torch(log_Kv, norm_Kv, func_f).solver(n_epochs = 100, lr = 1e-1) - log_Kv
         log_v = log_b - lse(-C_eps + log_u.view(1,-1))
 
         log_u.detach_()
@@ -156,7 +152,7 @@ def sinkhorn_torch(x, y, b, functional, lamb, eps, n_iter):
     log_pi = log_u.view(-1).unsqueeze(1) - C_eps + log_v.view(-1).unsqueeze(0)
     pi = log_pi.exp()
     neg_entropy = (pi*log_pi).sum() - pi.sum()
-    objective = (C*pi).sum() - eps * neg_entropy + lamb * functional(pi.sum(1))
+    objective = (C*pi).sum() - eps * neg_entropy + func_f(pi.sum(1))
     
     return (objective, pi)
 

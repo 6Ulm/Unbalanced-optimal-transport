@@ -23,72 +23,73 @@ def lse(A, dim = 1):
 ##################################
 
 class Proximal():
-    def __init__(self, functional):
+    def __init__(self, functional, eps):
         self.function = functional['function']
         self.function_support = functional['support']
+        self.eps = eps
 
-    def update(self, log_q, norm_q):
+    def update(self, log_q):
+        self.q_sum = lse(log_q,0).view(-1)[0].exp()
         self.log_q = log_q.view(-1)
-        self.q_sum = self.log_q.exp().sum()
-        self.norm_q = norm_q
 
     def KL(self, log_p):
         p = log_p.exp()
-        KL_div = p.dot(log_p) - p.dot(self.log_q) - p.sum() + self.q_sum
+        p_sum = lse(log_p.view(-1,1),0).view(-1)[0].exp()
+        KL_div = p.dot(log_p) - p.dot(self.log_q) - p_sum + self.q_sum
         return KL_div
 
-    def solver(self, n_epochs = 500, lr = 1e-2):
-        lagrangien = lambda log_p: self.KL(log_p) + self.function(log_p.exp()*self.norm_q) / self.norm_q
-
+    def solver(self, n_epochs, torch_optimiser, **optim_kwarg):
         if self.function_support == None:
+            obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp()) / self.eps
             log_p = self.log_q.clone().requires_grad_(True)
+            optimiser = torch_optimiser([log_p], **optim_kwarg)
             for _ in range(n_epochs):
-                obj = lagrangien(log_p)
-                obj.backward()
-                with torch.no_grad():
-                    log_p -= lr * log_p.grad
-                log_p.grad.zero_()
+                obj_value = obj(log_p)
+                obj_value.backward()
+                optimiser.step()
+                optimiser.zero_grad()
             log_p.detach_()
 
         else:
-            objs = {log_p: lagrangien(log_p) for log_p in self.function_support}
-            log_p = min(objs, key=objs.get) - self.norm_q.log()
+            obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp())
+            objs = {log_p: obj(log_p) for log_p in self.function_support}
+            log_p = min(objs, key=objs.get)
 
         return log_p.view(-1,1)
 
-def normalise(log_vec):
-    log_norm = lse(log_vec, 0).view(-1)[0]
-    norm_vec = log_norm.exp()
-    log_vec -= log_norm
-    return (norm_vec, log_vec)
-
-def generalised_sinkhorn(C, f, g, eps, n_iter):
+def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimiser, **optim_kwarg):
     C_eps = C/eps
     log_u = torch.zeros(C.shape[0]).to(device).float().view(-1,1)
     log_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
 
-    prox_f = Proximal(f)
-    prox_g = Proximal(g)
+    err_u = torch.zeros(C.shape[0]).to(device).float().view(-1,1)
+    err_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
+
+    prox_f = Proximal(f, eps)
+    prox_g = Proximal(g, eps)
     
     for _ in tqdm.tqdm(range(n_iter)):
         log_Kv = lse(-C_eps + log_v.t())
-        norm_Kv, log_Kv = normalise(log_Kv)
-
-        prox_f.update(log_Kv, norm_Kv)
-        log_u = prox_f.solver() - log_Kv
+        log_Kv_scale = log_Kv - err_u/eps
+        prox_f.update(log_Kv_scale)
+        log_u = prox_f.solver(prox_n_iter, torch_optimiser, **optim_kwarg) - log_Kv
 
         log_Ktu = lse(-C_eps.t() + log_u.t())
-        norm_Ktu, log_Ktu = normalise(log_Ktu)
+        log_Ktu_scale = log_Ktu - err_v/eps
+        prox_g.update(log_Ktu_scale)
+        log_v = prox_g.solver(prox_n_iter, torch_optimiser, **optim_kwarg) - log_Ktu
 
-        prox_g.update(log_Ktu, norm_Ktu)
-        log_v = prox_g.solver() - log_Ktu
+        if torch.max(log_u.abs().max(), log_v.abs().max()) > thres:
+            err_u += (eps * log_u)
+            err_v += (eps * log_v)
+            C_eps -= (err_u.view(-1).unsqueeze(1) + err_v.view(-1).unsqueeze(0))/eps
+            log_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
 
-    log_pi = log_u.view(-1).unsqueeze(1) - C_eps + log_v.view(-1).unsqueeze(0)
-    log_pi -= lse(log_pi.view(-1,1),0)
-    
+    log_pi = log_u.view(-1).unsqueeze(1) - C_eps + log_v.view(-1).unsqueeze(0)    
     pi = log_pi.exp()
     neg_entropy = (pi*log_pi).sum() - pi.sum()
-    objective = (C*pi).sum() - eps * neg_entropy + f['function'](pi.sum(1)) + g['function'](pi.sum(0))
+    objective = (C*pi).sum() - eps * neg_entropy + \
+                prox_f.function(pi.sum(1)) + prox_g.function(pi.sum(0))
     
     return (objective, pi)
 

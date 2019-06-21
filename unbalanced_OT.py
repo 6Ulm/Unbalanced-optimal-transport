@@ -39,8 +39,9 @@ class Proximal():
         return KL_div
 
     def solver(self, n_epochs, torch_optimiser, **optim_kwarg):
+        obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp()) / self.eps
+
         if self.function_support == None:
-            obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp()) / self.eps
             log_p = self.log_q.clone().requires_grad_(True)
             optimiser = torch_optimiser([log_p], **optim_kwarg)
             for _ in range(n_epochs):
@@ -51,7 +52,6 @@ class Proximal():
             log_p.detach_()
 
         else:
-            obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp())
             objs = {log_p: obj(log_p) for log_p in self.function_support}
             log_p = min(objs, key=objs.get)
 
@@ -88,8 +88,7 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
     log_pi = log_u.view(-1).unsqueeze(1) - C_eps + log_v.view(-1).unsqueeze(0)    
     pi = log_pi.exp()
     neg_entropy = (pi*log_pi).sum() - pi.sum()
-    objective = (C*pi).sum() - eps * neg_entropy + \
-                prox_f.function(pi.sum(1)) + prox_g.function(pi.sum(0))
+    objective = (C*pi).sum() - eps * neg_entropy + prox_f.function(pi.sum(1)) + prox_g.function(pi.sum(0))
     
     return (objective, pi)
 

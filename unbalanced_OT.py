@@ -72,7 +72,7 @@ class Proximal():
             log_p.detach_()
 
         # otherwise, manually search over the log domain
-        elif self.log_domain == None:
+        else:
             objs = {log_p: obj(log_p) for log_p in self.log_domain}
             log_p = min(objs, key=objs.get)
 
@@ -107,11 +107,11 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
     '''
 
     C_eps = C/eps
-    log_u = torch.zeros(C.shape[0]).to(device).float().view(-1,1)
-    log_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
+    log_u = torch.zeros(C.shape[0]).to(device).double().view(-1,1)
+    log_v = torch.zeros(C.shape[1]).to(device).double().view(-1,1)
 
-    err_u = torch.zeros(C.shape[0]).to(device).float().view(-1,1)
-    err_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
+    err_u = torch.zeros(C.shape[0]).to(device).double().view(-1,1)
+    err_v = torch.zeros(C.shape[1]).to(device).double().view(-1,1)
 
     prox_f = Proximal(f, eps)
     prox_g = Proximal(g, eps)
@@ -132,7 +132,7 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
             err_u += (eps * log_u)
             err_v += (eps * log_v)
             C_eps -= (err_u.view(-1).unsqueeze(1) + err_v.view(-1).unsqueeze(0))/eps
-            log_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
+            log_v = torch.zeros(C.shape[1]).to(device).double().view(-1,1)
 
     log_pi = log_u.view(-1).unsqueeze(1) - C_eps + log_v.view(-1).unsqueeze(0)    
     pi = log_pi.exp()

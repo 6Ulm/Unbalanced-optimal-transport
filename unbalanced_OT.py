@@ -10,7 +10,7 @@ Pytorch implementation of the following discrete unbalanced OT problem:
         + H: KL divergence of matrix
         + vec_1: vector of 1s
         + f, g: convex functions
-        + Dom: domain of pi
+        + Dom: positive domain of pi
 '''
 
 def cost_matrix(x, y, p):
@@ -77,7 +77,7 @@ class Proximal():
             log_p = min(objs, key=objs.get)
 
         return log_p.view(-1,1)
-
+    
 def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimiser, **optim_kwarg):
     '''
     Implementation of stable scaling algorithm in [Chizat, 2018].
@@ -127,6 +127,7 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
         prox_g.update(log_Ktu_scale)
         log_v = prox_g.solver(prox_n_iter, torch_optimiser, **optim_kwarg) - log_Ktu
 
+        # Stablised scaling
         if torch.max(log_u.abs().max(), log_v.abs().max()) > thres:
             print('Threshold violation')
             err_u += (eps * log_u)

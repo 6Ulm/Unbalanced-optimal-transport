@@ -25,7 +25,7 @@ def lse(A, dim = 1):
 class Proximal():
     def __init__(self, functional, eps):
         self.function = functional['function']
-        self.function_support = functional['support']
+        self.log_domain = functional['log_domain']
         self.eps = eps
 
     def update(self, log_q):
@@ -41,7 +41,7 @@ class Proximal():
     def solver(self, n_epochs, torch_optimiser, **optim_kwarg):
         obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp()) / self.eps
 
-        if self.function_support == None:
+        if self.log_domain == None:
             log_p = self.log_q.clone().requires_grad_(True)
             optimiser = torch_optimiser([log_p], **optim_kwarg)
             for _ in range(n_epochs):
@@ -52,7 +52,7 @@ class Proximal():
             log_p.detach_()
 
         else:
-            objs = {log_p: obj(log_p) for log_p in self.function_support}
+            objs = {log_p: obj(log_p) for log_p in self.log_domain}
             log_p = min(objs, key=objs.get)
 
         return log_p.view(-1,1)
@@ -80,6 +80,7 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
         log_v = prox_g.solver(prox_n_iter, torch_optimiser, **optim_kwarg) - log_Ktu
 
         if torch.max(log_u.abs().max(), log_v.abs().max()) > thres:
+            print('Threshold violation')
             err_u += (eps * log_u)
             err_v += (eps * log_v)
             C_eps -= (err_u.view(-1).unsqueeze(1) + err_v.view(-1).unsqueeze(0))/eps

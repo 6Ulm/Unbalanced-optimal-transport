@@ -97,6 +97,8 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
             + 'log_domain': None if the function is continuous everywhere, otherwise 
                             a FINITE list of LOG of values in the domain. Currently do not support 
                             functions which are continuous and defined on a convex and proper subset.
+                            For this case, one can use autograd module + scipy minimize.
+
         - thres: threshold above which sinkhorn iterations are modified to guarantee stability
         - n_iter: number of sinkhorn iterations
         - prox_n_iter: number of torch optimiser iterations

@@ -1,17 +1,36 @@
 import torch, tqdm
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+'''
+Pytorch implementation of the following discret unbalanced OT problem:
+    min <pi, C> - eps * H(pi) + f(pi * vec_1) + g(pi.T * vec_1) + Dom(pi)
+    where:
+        + C: cost matrix
+        + eps: regularisation parameter
+        + H: KL divergence of matrix
+        + vec_1: vector of 1s
+        + f, g: convex functions
+        + Dom: domain of pi
+'''
+
 ################################################
 ######### Support functions ##################
 ################################################
 
-def cost_matrix(x,y):
+def cost_matrix(x, y, p):
+    '''
+    Calculate cost matrix, much faster than double loops
+    '''
     C = x.unsqueeze(1) - y.unsqueeze(0) # C_ij = x_i - y_j
-    C = C.abs()
+    if p == 1:
+        C.abs_()
+    elif p == 2:
+        C.pow_(2)
     return C
 
 def lse(A, dim = 1):
     '''
+    Implementation of log_sum_exp trick
     dim = 1: return log of sum_j exp(A_ij)
     dim = 0: return log of sum_i exp(A_ij)
     '''
@@ -23,6 +42,10 @@ def lse(A, dim = 1):
 ##################################
 
 class Proximal():
+    '''
+    Calculate proximal operator
+    '''
+    
     def __init__(self, functional, eps):
         self.function = functional['function']
         self.log_domain = functional['log_domain']
@@ -41,6 +64,7 @@ class Proximal():
     def solver(self, n_epochs, torch_optimiser, **optim_kwarg):
         obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp()) / self.eps
 
+        # if function is continous/differentiable EVERYWHERE, then use autograd
         if self.log_domain == None:
             log_p = self.log_q.clone().requires_grad_(True)
             optimiser = torch_optimiser([log_p], **optim_kwarg)
@@ -51,13 +75,36 @@ class Proximal():
                 optimiser.zero_grad()
             log_p.detach_()
 
-        else:
+        # otherwise, manually search over the log domain
+        elif self.log_domain == None:
             objs = {log_p: obj(log_p) for log_p in self.log_domain}
             log_p = min(objs, key=objs.get)
 
         return log_p.view(-1,1)
 
 def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimiser, **optim_kwarg):
+    '''
+    Implementation of stable scaling algorithm in [Chizat, 2018].
+    https://arxiv.org/abs/1607.05816
+
+    Input:
+        - C: cost matrix of size (M x N)
+        - f,g: dictionaries whose keys are:
+            + 'function': convex function, must be either continuous and defined EVERYWHERE, 
+                        or defined at only FINITELY many points (e.g. indicator function).
+                        f must take value in R^M and g must take value in R^N.
+            + 'log_domain': None if the function is continuous everywhere, otherwise 
+                            a FINITE list of LOG of values in the domain. Currently do not support 
+                            functions which are continuous and defined on a convex and proper subset.
+        - thres: threshold above which sinkhorn iterations are modified to guarantee stability
+        - n_iter: number of sinkhorn iterations
+        - prox_n_iter: number of torch optimiser iterations
+        - torch_optimiser: NAME of torch.optim optimiser: SGD, Adam, Adadelta, etc...
+        - optim_kwarg: parameters of torch_optimiser
+    Output:
+        - Unbalanced regularised OT cost and plan
+    '''
+
     C_eps = C/eps
     log_u = torch.zeros(C.shape[0]).to(device).float().view(-1,1)
     log_v = torch.zeros(C.shape[1]).to(device).float().view(-1,1)
@@ -96,6 +143,18 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
 ##############################
 
 def standard_sinkhorn(C, a, b, eps, n_iter):
+    '''
+    Basic torch implementation of classical sinkhorn
+    Input:
+        + C: cost matrix of shape (M x N)
+        + a: probability vector in R^M
+        + b: probability vector in R^N
+        + eps: regularisation parameter
+        + n_iter: number of sinkhorn iterations
+    Output:
+        + Unbalanced regularised OT cost and plan
+    '''
+
     C_eps = C/eps
     log_a, log_b = a.log().view(-1,1), b.log().view(-1,1)
     log_u, log_v = torch.zeros_like(log_a), torch.zeros_like(log_b)

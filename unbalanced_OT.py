@@ -45,7 +45,7 @@ class Proximal():
     '''
     Calculate proximal operator
     '''
-    
+
     def __init__(self, functional, eps):
         self.function = functional['function']
         self.log_domain = functional['log_domain']
@@ -86,6 +86,11 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
     '''
     Implementation of stable scaling algorithm in [Chizat, 2018].
     https://arxiv.org/abs/1607.05816
+    Work almost exclusively with log values in order to:
+    + Achieve stability
+    + Convert the (constrained) proximal problem (where proximal operator must be positive) 
+        to the unconstrained one (calculate log of proximal operator instead),
+        so that torch's autograd can be used
 
     Input:
         - C: cost matrix of size (M x N)

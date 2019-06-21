@@ -13,10 +13,6 @@ Pytorch implementation of the following discret unbalanced OT problem:
         + Dom: domain of pi
 '''
 
-################################################
-######### Support functions ##################
-################################################
-
 def cost_matrix(x, y, p):
     '''
     Calculate cost matrix, much faster than double loops
@@ -37,9 +33,9 @@ def lse(A, dim = 1):
     A_max = torch.max(A, dim)[0].view(-1,1)
     return A_max + (A-A_max).exp().sum(dim).log().view(-1,1)
 
-##################################
-####### Generalised sinkhorn #####
-##################################
+######################################
+####### Stable scaling algorithm #####
+######################################
 
 class Proximal():
     '''
@@ -145,7 +141,7 @@ def generalised_sinkhorn(C, f, g, thres, eps, n_iter, prox_n_iter, torch_optimis
     
     return (objective, pi)
 
-##############################
+######################################
 
 def standard_sinkhorn(C, a, b, eps, n_iter):
     '''

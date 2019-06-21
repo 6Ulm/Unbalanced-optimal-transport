@@ -2,7 +2,7 @@ import torch, tqdm
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 '''
-Pytorch implementation of the following discret unbalanced OT problem:
+Pytorch implementation of the following discrete unbalanced OT problem:
     min <pi, C> - eps * H(pi) + f(pi * vec_1) + g(pi.T * vec_1) + Dom(pi)
     where:
         + C: cost matrix

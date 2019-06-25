@@ -57,23 +57,24 @@ class Proximal():
         KL_div = p.dot(log_p) - p.dot(self.log_q) - p_sum + self.q_sum
         return KL_div
 
-    def solver(self, n_epochs, torch_optimiser, **optim_kwarg):
-        obj = lambda log_p: self.KL(log_p) + self.function(log_p.exp()) / self.eps
+    def prox_func(self, log_p):
+        return self.KL(log_p) + self.function(log_p.exp()) / self.eps
 
+    def solver(self, n_epochs, torch_optimiser, **optim_kwarg):
         # if function is continous/differentiable EVERYWHERE, then use autograd
         if self.log_domain == None:
             log_p = self.log_q.clone().requires_grad_(True)
             optimiser = torch_optimiser([log_p], **optim_kwarg)
             for _ in range(n_epochs):
-                obj_value = obj(log_p)
-                obj_value.backward()
+                obj = self.prox_func(log_p)
+                obj.backward()
                 optimiser.step()
                 optimiser.zero_grad()
-            log_p.detach_()
+            log_p.detach_() # this is very important
 
         # otherwise, manually search over the log domain
         else:
-            objs = {log_p: obj(log_p) for log_p in self.log_domain}
+            objs = {log_p: self.prox_func(log_p) for log_p in self.log_domain}
             log_p = min(objs, key=objs.get)
 
         return log_p.view(-1,1)
